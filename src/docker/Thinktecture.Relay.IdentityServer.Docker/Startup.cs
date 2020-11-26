@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using IdentityServer4.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -10,7 +9,7 @@ using Thinktecture.Relay.Server.Persistence.EntityFrameworkCore.PostgreSql;
 
 namespace Thinktecture.Relay.IdentityServer.Docker
 {
-	public class Startup
+	 public class Startup
 	{
 		public Startup(IConfiguration configuration)
 		{
@@ -23,8 +22,8 @@ namespace Thinktecture.Relay.IdentityServer.Docker
 		public void ConfigureServices(IServiceCollection services)
 		{
 			services.AddControllersWithViews();
-
-			services.AddRelayServerConfigurationDbContext(Configuration.GetConnectionString("PostgreSql"));
+			var postgreSqlConfig = services.AddRelayPostgreSqlConfig(Configuration);
+			services.AddRelayServerConfigurationDbContext(postgreSqlConfig.ConnectionString);
 
 			services.AddIdentityServer(c => { })
 				.AddClientStore<RelayServerTenantStore>()
