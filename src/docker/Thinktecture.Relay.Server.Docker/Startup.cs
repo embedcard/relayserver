@@ -32,10 +32,16 @@ namespace Thinktecture.Relay.Server.Docker
 					options.Audience = Constants.AuthenticationAudience;
 					options.RequireHttpsMetadata = authorityUri.Scheme == "https";
 				});
+			var postgreSqlConfig = services.AddRelayPostgreSqlConfig(Configuration);
+			var rabbitMqConfig = services.AddRelayRabbitMqConfig(Configuration);
 
-			services.AddRelayServerConfigurationDbContext(Configuration.GetConnectionString("PostgreSql"));
+			services.AddRelayServerConfigurationDbContext(postgreSqlConfig.ConnectionString);
 			services.AddRelayServer()
-				.AddRabbitMqRouting(options => Configuration.GetSection("RabbitMq").Bind(options))
+				.AddRabbitMqRouting(options =>
+				{
+					options.Uri = rabbitMqConfig.ConnectionString;
+					options.ClusterHosts = rabbitMqConfig.ClusterHosts;
+				})
 				.AddSignalRConnectorTransport()
 				.AddFileBodyStore(options => Configuration.GetSection("BodyStore").Bind(options))
 				.AddMaintenanceJobs(options => Configuration.GetSection("Maintenance").Bind(options))
