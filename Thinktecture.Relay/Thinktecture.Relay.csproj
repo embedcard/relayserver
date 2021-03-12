@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>net462</TargetFramework>
     <Title>Thinktecture RelayServer</Title>
     <Description>Provides interface definitions to extend the Thinktecture RelayServer with custom plugins.</Description>
     <Summary>Thinktecture.RelayServer provides interfaces for extenion points within the RelayServer.</Summary>
