@@ -50,8 +50,10 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 		public TimeSpan TokenRefreshWindow { get; private set; }
 		public DateTime TokenExpiry { get; private set; } = DateTime.MaxValue;
 		public int RelayServerConnectionInstanceId { get; }
-		public DateTime LastHeartbeat { get; private set; } = DateTime.MinValue;
-		public TimeSpan HeartbeatInterval { get; private set; }
+		private DateTime LastHeartbeat { get; set; } = DateTime.MinValue;
+		private TimeSpan HeartbeatInterval { get; set; }
+		private bool HeartbeatSupportedByServer { get; set; }
+		private bool FirstHeartbeatReceived { get; set; }
 		public DateTime? ConnectedSince { get; private set; }
 		public DateTime? LastActivity { get; private set; }
 		public TimeSpan? AbsoluteConnectionLifetime { get; private set; }
@@ -59,10 +61,15 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 
 		public RelayServerSignalRConnection(Assembly versionAssembly, string userName, string password, Uri relayServerUri, TimeSpan requestTimeout,
 			TimeSpan tokenRefreshWindow, IOnPremiseTargetConnectorFactory onPremiseTargetConnectorFactory, IRelayServerHttpConnection httpConnection,
-			ILogger logger, bool logSensitiveData, IOnPremiseInterceptorFactory onPremiseInterceptorFactory)
+			ILogger logger, bool logSensitiveData, IOnPremiseInterceptorFactory onPremiseInterceptorFactory, bool? heartbeatSupportedByServer)
 			: base(new Uri(relayServerUri, "/signalr").AbsoluteUri, $"cv={_CONNECTOR_VERSION}&av={versionAssembly.GetName().Version}")
 		{
 			RelayServerConnectionInstanceId = Interlocked.Increment(ref _nextInstanceId);
+
+			if (heartbeatSupportedByServer.HasValue)
+			{
+				HeartbeatSupportedByServer = true;
+			}
 
 			_userName = userName;
 			_password = password;
@@ -194,15 +201,20 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 
 			_stopRequested = false;
 
+			SyntheticHeartbeatBeforeRecvServerConfig();
+
 			if (!await TryRequestAuthorizationTokenAsync().ConfigureAwait(false))
 			{
 				return;
 			}
 
+			SyntheticHeartbeatBeforeRecvServerConfig();
+
 			try
 			{
 				await Start().ConfigureAwait(false);
 				ConnectedSince = DateTime.UtcNow;
+				SyntheticHeartbeatBeforeRecvServerConfig();
 
 				_logger?.Information("Connected to RelayServer {RelayServerUri} with connection {ConnectionId}", Uri, ConnectionId);
 
@@ -219,6 +231,11 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 			{
 				_logger?.Error(ex, "Error while connecting to RelayServer {RelayServerUri} with connection instance {RelayServerConnectionInstanceId}", Uri, RelayServerConnectionInstanceId);
 			}
+		}
+
+		private void SyntheticHeartbeatBeforeRecvServerConfig()
+		{
+			LastHeartbeat = DateTime.UtcNow.Add(_requestTimeout);
 		}
 
 		public async Task<bool> TryRequestAuthorizationTokenAsync()
@@ -258,6 +275,19 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 		public Task SendAcknowledgmentAsync(Guid acknowledgeOriginId, string acknowledgeId, string connectionId = null)
 		{
 			return GetToRelayAsync($"/request/acknowledge?oid={acknowledgeOriginId}&aid={acknowledgeId}&cid={connectionId ?? ConnectionId}", CancellationToken.None);
+		}
+
+		public void CheckHeartbeat()
+		{
+			if (HeartbeatSupportedByServer && LastHeartbeat != DateTime.MinValue)
+			{
+				if (LastHeartbeat <= DateTime.UtcNow.Subtract(HeartbeatInterval.Add(TimeSpan.FromSeconds(2))))
+				{
+					_logger.Warning(
+						$"Did not receive expected heartbeat. last-heartbeat={LastHeartbeat}, heartbeat-interval={HeartbeatInterval}, relay-server={Uri}, relay-server-connection-instance-id={RelayServerConnectionInstanceId}");
+					Reconnect();
+				}
+			}
 		}
 
 		private void SetBearerToken(TokenResponse tokenResponse)
@@ -425,6 +455,10 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 
 				TokenRefreshWindow = config.TokenRefreshWindow ?? TokenRefreshWindow;
 				HeartbeatInterval = config.HeartbeatInterval ?? HeartbeatInterval;
+				if (config.HeartbeatInterval.HasValue)
+				{
+					HeartbeatSupportedByServer = true;
+				}
 
 				_minReconnectWaitTime = config.ReconnectMinWaitTime ?? _minReconnectWaitTime;
 				_maxReconnectWaitTime = config.ReconnectMaxWaitTime ?? _maxReconnectWaitTime;
@@ -469,8 +503,11 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 		{
 			_logger?.Debug("Received heartbeat from RelayServer. request-id={RequestId}", request.RequestId);
 
-			if (LastHeartbeat == DateTime.MinValue)
+			HeartbeatSupportedByServer = true;
+
+			if (!FirstHeartbeatReceived)
 			{
+				FirstHeartbeatReceived = true;
 				if (request.HttpHeaders != null)
 				{
 					request.HttpHeaders.TryGetValue("X-TTRELAY-HEARTBEATINTERVAL", out var heartbeatHeaderValue);
@@ -519,6 +556,7 @@ namespace Thinktecture.Relay.OnPremiseConnector.SignalR
 
 			LastHeartbeat = DateTime.MinValue;
 			HeartbeatInterval = TimeSpan.Zero;
+			FirstHeartbeatReceived = false;
 
 			if (!reconnecting)
 			{
