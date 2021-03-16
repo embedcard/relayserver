@@ -7,6 +7,6 @@ using System.Reflection;
 [assembly: AssemblyCopyright("Copyright © Thinktecture AG 2015 - 2020. All rights reserved.")]
 [assembly: AssemblyTrademark("Thinktecture RelayServer")]
 
-[assembly: AssemblyVersion("2.3.1.0")]
-[assembly: AssemblyFileVersion("2.3.1.0")]
-[assembly: AssemblyInformationalVersion("2.3.1.0")]
+[assembly: AssemblyVersion("2021.3.16.0")]
+[assembly: AssemblyFileVersion("2021.3.16.0")]
+[assembly: AssemblyInformationalVersion("2021.3.16.0")]
